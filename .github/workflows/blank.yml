@@ -21,3 +21,4 @@ jobs:
           echo "${{ github.actor }}"
           echo "$PR_NUMBER"
           echo "${{ secrets.DUMMY }}"
+          echo 3
