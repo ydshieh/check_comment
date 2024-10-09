@@ -17,4 +17,5 @@ jobs:
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
+          echo "${{ github.actor }}"
           echo "$PR_NUMBER"
