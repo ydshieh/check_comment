@@ -20,3 +20,4 @@ jobs:
         run: |
           echo "${{ github.actor }}"
           echo "$PR_NUMBER"
+          echo "${{ secrets.DUMMY }}"
