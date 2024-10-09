@@ -22,5 +22,5 @@ jobs:
           echo "$PR_NUMBER"
           echo "${{ secrets.DUMMY }}"
           echo 3
-          echo $(python -c 'hello')
-          echo $(dummy=${{ secrets.DUMMY }} python -c 'import os; os.environ["dummy"][:-2]')          
+          echo $(python -c 'print("hello")')
+          echo $(dummy=${{ secrets.DUMMY }} python -c 'import os; foo = os.environ["dummy"][:-2]; print(foo)')          
