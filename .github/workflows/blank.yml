@@ -118,8 +118,8 @@ jobs:
             -f "target_url=$GITHUB_RUN_URL" -f "state=pending" -f "description=Slow CI job" -f "context=pytest/custom-tests"
 
   update_run:
-    name: Create run
-    needs: [get-sha, get-tests]
+    name: Update run
+    needs: [get-sha, get-tests, create_run]
     permissions: write-all
     runs-on: ubuntu-latest
     steps:
