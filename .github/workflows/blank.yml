@@ -1,27 +1,118 @@
 name: PR comment github action tests
 
 on:
-  pull_request_review_comment:
-    types: [created]
   issue_comment:
     types: 
       - created
+  pull_request_review_comment:
+    types: [created]
   pull_request:
 
 jobs:
   get-pr-number:
     runs-on: ubuntu-22.04
     name: Get PR number
+    outputs:
+      PR_NUMBER: ${{ steps.set_pr_number.outputs.PR_NUMBER }}
     steps:
       - name: Get PR number
         shell: bash
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           echo "${{ github.actor }}"
-          echo "$PR_NUMBER"
           echo "${{ secrets.DUMMY }}"
-          echo 3
           echo $(python -c 'print("hello")')
           echo $(dummy=${{ secrets.DUMMY }} python -c 'import os; foo = os.environ["dummy"][:-2]; print(foo)')          
-          echo $(dummy=${{ secrets.GITHUB_TOKEN }} python -c 'import os; foo = os.environ["dummy"][:2]; print(foo)')    
+          echo $(dummy=${{ secrets.GITHUB_TOKEN }} python -c 'import os; foo = os.environ["dummy"][:2]; print(foo)') 
+          echo "${{ github.event.pull_request.number }}"
+          echo "${{ github.event.issue.number }}"
+          echo "${{ github.event.issue.pull_request }}"
+          if [ "${{ github.event.pull_request.number }}" != "" ]; then
+            echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+          elif [[ "${{ github.event.issue.number }}" != "" && "${{ github.event.issue.pull_request }}" != "" ]]; then
+            echo "PR_NUMBER=${{ github.event.issue.number }}" >> $GITHUB_ENV
+          else
+            echo "PR_NUMBER=" >> $GITHUB_ENV
+          fi
+
+      - name: Check PR number
+        shell: bash
+        run: |
+          echo "${{ env.PR_NUMBER }}"
+
+      - name: Set PR number
+        id: set_pr_number
+        run: echo "PR_NUMBER=${{ env.PR_NUMBER }}" >> "$GITHUB_OUTPUT"
+
+  # Get commit sha of `refs/pull/PR_NUMBER/merge` and `refs/pull/PR_NUMBER/head`
+  get-sha:
+    runs-on: ubuntu-latest
+    needs: get-pr-number
+    if: ${{ needs.get-pr-number.outputs.PR_NUMBER != ''}}
+    outputs:
+      PR_MERGE_COMMIT_SHA: ${{ steps.get_sha.outputs.PR_MERGE_COMMIT_SHA }}
+      PR_HEAD_SHA: ${{ steps.get_sha.outputs.PR_HEAD_SHA }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: "0"
+          ref: "refs/pull/${{needs.get-pr-number.outputs.PR_NUMBER}}/merge"
+
+      - name: Get SHA
+        id: get_sha
+        env:
+          PR_NUMBER: ${{needs.get-pr-number.outputs.PR_NUMBER}}
+        run: |
+            echo "PR_MERGE_COMMIT_SHA: $(git log -1 --format=%H)"
+            echo "PR_MERGE_COMMIT_SHA=$(git log -1 --format=%H)" >> "$GITHUB_OUTPUT"
+            git fetch origin refs/pull/$PR_NUMBER/head:refs/remotes/pull/$PR_NUMBER/head
+            git checkout refs/remotes/pull/$PR_NUMBER/head
+            echo "PR_HEAD_SHA: $(git log -1 --format=%H)"
+            echo "PR_HEAD_SHA=$(git log -1 --format=%H)" >> "$GITHUB_OUTPUT"
+
+  # use a python script to handle this complex logic
+  # case 1: `run-slow` (auto. infer with limited number of models, but in particular, new model)
+  # case 2: `run-slow model_1, model_2`
+  # case 3: comment is `pytest ...`
+  get-tests:
+    runs-on: ubuntu-latest
+    needs: get-pr-number
+    if: ${{ needs.get-pr-number.outputs.PR_NUMBER != ''}}
+    permissions: write-all
+    outputs:
+      models: ${{ steps.models_to_run.outputs.models }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: "0"
+          ref: "refs/pull/${{needs.get-pr-number.outputs.PR_NUMBER}}/merge"
+
+      # TODO: update
+      - name: Reply to the comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            repos/${{ github.repository }}/issues/${{ needs.get-pr-number.outputs.PR_NUMBER }}/comments \
+            -f "body=This comment contains run-slow, running the specified job..."
+
+  create_run:
+    name: Create run
+    needs: [get-sha, get-tests]
+    permissions: write-all
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create Run
+        id: create_run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            repos/${{ github.repository }}/statuses/${{ needs.get-sha.outputs.PR_HEAD_SHA }} \
+            -f "target_url=$GITHUB_RUN_URL" -f "state=pending" -f "description=Slow CI job" -f "context=pytest/custom-tests"
