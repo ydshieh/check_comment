@@ -6,6 +6,8 @@ on:
       - created
     branches-ignore:
       - main
+  pull_request_review_comment:
+    types: [created]
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.issue.number }}-${{ contains(github.event.comment.body, 'run-slow') }}
   cancel-in-progress: true
@@ -14,8 +16,6 @@ jobs:
   get-pr-number:
     runs-on: ubuntu-22.04
     name: Get PR number
-    # For security: only allow team members to run
-    if: contains(fromJSON('["ydshieh"]'), github.actor)
     outputs:
       PR_NUMBER: ${{ steps.set_pr_number.outputs.PR_NUMBER }}
     steps:
